@@ -1817,9 +1817,7 @@ class Family::DataImporterTest < ActiveSupport::TestCase
     export = vest_export(sold_qty: 10)
     session = @family.import_sessions.create!(expected_chunks: 2)
     Family::DataImporter.new(@family, export, import_session: session).import!
-    without_sale = export.split("
-").reject { |line| JSON.parse(line).dig("data", "vest_trade_id") }.join("
-")
+    without_sale = export.split("\n").reject { |line| JSON.parse(line).dig("data", "vest_trade_id") }.join("\n")
 
     Family::DataImporter.new(@family, without_sale, import_session: session).import!
 
@@ -1834,6 +1832,33 @@ class Family::DataImporterTest < ActiveSupport::TestCase
 
     assert_raises(Family::DataImporter::InvalidRecordError) do
       Family::DataImporter.new(@family, buy, import_session: session).import!
+    end
+  end
+
+  test "a vest's sale for taxes is of the vest's own shares" do
+    export = edit_trades(vest_export(sold_qty: 10)) do |data|
+      data.merge!("ticker" => "OTHER#{SecureRandom.hex(3).upcase}", "security_id" => SecureRandom.uuid) if data["vest_trade_id"]
+    end
+    session = @family.import_sessions.create!(expected_chunks: 1)
+
+    assert_raises(Family::DataImporter::InvalidRecordError) do
+      Family::DataImporter.new(@family, export, import_session: session).import!
+    end
+  end
+
+  test "a vest has one sale for taxes, though a replay of it still links" do
+    export = vest_export(sold_qty: 10)
+    session = @family.import_sessions.create!(expected_chunks: 2)
+    Family::DataImporter.new(@family, export, import_session: session).import!
+    Family::DataImporter.new(@family, export, import_session: session).import!
+
+    records = export.split("\n").map { |line| JSON.parse(line) }
+    sale = records.find { |record| record.dig("data", "vest_trade_id") }
+    second = sale.deep_dup.tap { |record| record["data"].merge!("id" => SecureRandom.uuid, "entry_id" => SecureRandom.uuid) }
+    other_session = @family.import_sessions.create!(expected_chunks: 1)
+
+    assert_raises(Family::DataImporter::InvalidRecordError) do
+      Family::DataImporter.new(@family, (records + [ second ]).map(&:to_json).join("\n"), import_session: other_session).import!
     end
   end
 

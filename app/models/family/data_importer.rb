@@ -1322,9 +1322,17 @@ class Family::DataImporter
       return if vest_trade_id.blank?
 
       vest = imported[vest_trade_id] || session_imported_entry(sale.account, "Trade", vest_trade_id)
-      return invalid_record!("Trade", "vest_trade_id", vest_trade_id) unless vest&.trade&.vest? && vest.account_id == sale.account_id && vest != sale && sale.trade.qty.negative?
+      return invalid_record!("Trade", "vest_trade_id", vest_trade_id) unless vest_sale_for?(vest, sale)
 
       sale.update!(vest_entry: vest)
+    end
+
+    # A vest has at most one sale for taxes: a sale of its own shares, in its
+    # account. Replaying the same sale still matches.
+    def vest_sale_for?(vest, sale)
+      vest&.trade&.vest? && vest != sale && vest.account_id == sale.account_id &&
+        sale.trade.qty.negative? && sale.trade.security_id == vest.trade.security_id &&
+        vest.vest_parts.where(entryable_type: "Trade").where.not(id: sale.id).none?
     end
 
     # The lot is rebuilt from its trade on the next sync, which keeps a cost
