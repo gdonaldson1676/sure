@@ -118,6 +118,16 @@ class Trade < ApplicationRecord
     investment_activity_label == VEST_LABEL
   end
 
+  # A vest whose taxes the vest form worked out from its shares, rather than
+  # ones typed in from a paystub.
+  def taxes_generated?
+    vest? && extra&.dig("vest_taxes_generated") == true
+  end
+
+  def taxes_generated=(value)
+    self.extra = (extra || {}).merge("vest_taxes_generated" => value)
+  end
+
   # A negative quantity that left for another account you own. It looks exactly
   # like a sale — same sign, same shape — and only the label tells them apart.
   def internal_movement?

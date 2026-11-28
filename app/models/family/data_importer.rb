@@ -1264,6 +1264,7 @@ class Family::DataImporter
         # As for a transaction, the label is restored on a new trade only.
         trade.investment_activity_label = data["investment_activity_label"].presence_in(Trade::ACTIVITY_LABELS) if created
         trade.units_withheld = (data["units_withheld"].presence&.to_d if trade.vest?)
+        trade.taxes_generated = data["vest_taxes_generated"] == true if trade.vest? && data.key?("vest_taxes_generated")
 
         entry ||= Entry.new(entryable: trade)
         entry.vest_write = true

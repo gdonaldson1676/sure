@@ -533,6 +533,7 @@ class Family::DataExporter
             lot_total_cost: lot_total_costs[trade.entry.id],
             lot_source_trade_id: trade.lot_source_entry&.entryable_id,
             units_withheld: trade.units_withheld,
+            vest_taxes_generated: (trade.taxes_generated? if trade.vest?),
             # A vest's income and taxes, exported ahead of it as Transactions.
             vest_part_transaction_ids: vest_parts[trade.entry.id],
             created_at: trade.created_at,

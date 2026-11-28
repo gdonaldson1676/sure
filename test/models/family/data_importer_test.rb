@@ -1785,6 +1785,7 @@ class Family::DataImporterTest < ActiveSupport::TestCase
       income, taxes = Trade::VestForm.parts_of(vest)
       assert_equal(-1000, income.amount)
       assert_equal [ 300 ], taxes.map(&:amount)
+      assert Trade::VestForm.for(vest).tax_lines.none?(&:amount), "the tax stays the one the vest form works out"
     end
   end
 

@@ -113,6 +113,33 @@ class Trade::VestFormTest < ActiveSupport::TestCase
     assert_equal part_ids, vest.vest_parts.pluck(:id).sort, "the same entries, updated in place"
   end
 
+  test "a reopened vest works out its generated tax again, and keeps a typed one" do
+    form = vest_form(vested_qty: 100, units_withheld: 30, price: 10)
+    form.save
+    tax = Trade::VestForm.parts_of(form.entry).second.first
+
+    reopened = Trade::VestForm.for(form.entry.reload)
+    assert reopened.tax_lines.none?(&:amount), "the generated tax isn't shown as typed in"
+    reopened.assign_attributes(units_withheld: 20)
+    assert reopened.save, reopened.errors.full_messages.to_sentence
+    assert_equal [ [ tax.id, 200 ] ], Trade::VestForm.parts_of(form.entry.reload).second.map { |part| [ part.id, part.amount ] }
+
+    typed = Trade::VestForm.for(form.entry.reload)
+    typed.assign_attributes(tax_lines: [ { name: "Federal", amount: 150 } ])
+    typed.save
+    again = Trade::VestForm.for(form.entry.reload)
+    again.assign_attributes(units_withheld: 10)
+    assert again.save, again.errors.full_messages.to_sentence
+    assert_equal [ 150 ], Trade::VestForm.parts_of(form.entry.reload).second.map(&:amount)
+  end
+
+  test "some shares must reach the account at the precision they're stored" do
+    form = vest_form(vested_qty: BigDecimal("0.0000000000000000014"), units_withheld: BigDecimal("0.000000000000000001"), price: 10)
+
+    assert_not form.save
+    assert_includes form.errors[:base], I18n.t("vests.form.received_too_small")
+  end
+
   test "saving the vest again keeps what the user added to its income and taxes" do
     form = vest_form(vested_qty: 100, units_withheld: 30, price: 10, tax_lines: [ { name: "Federal", amount: 200 }, { name: "State", amount: 100 } ])
     form.save

@@ -31,6 +31,9 @@ class Trade::VestForm
 
   attr_accessor :account, :date, :ticker, :manual_ticker, :vested_qty, :units_withheld, :price,
                 :income_category_id
+  # The entry of a tax the form generated rather than one typed in, so a
+  # reopened vest works it out again from its shares.
+  attr_accessor :generated_tax_id
   attr_reader :entry, :tax_lines
 
   validates :date, presence: true
@@ -47,6 +50,7 @@ class Trade::VestForm
   def self.for(entry)
     trade = entry.trade
     income, taxes = parts_of(entry)
+    generated = trade.taxes_generated? && taxes.one?
 
     new(
       entry: entry,
@@ -56,7 +60,8 @@ class Trade::VestForm
       units_withheld: trade.units_withheld,
       price: trade.price,
       income_category_id: income&.entryable&.category_id,
-      tax_lines: taxes.map { |tax| { id: tax.id, name: tax.name, category_id: tax.entryable.category_id, amount: tax.amount } }
+      tax_lines: generated ? [] : taxes.map { |tax| { id: tax.id, name: tax.name, category_id: tax.entryable.category_id, amount: tax.amount } },
+      generated_tax_id: (taxes.first.id if generated)
     )
   end
 
@@ -113,7 +118,7 @@ class Trade::VestForm
     return entered if entered.any?
 
     withheld_value = stored(gross_pay) - stored(shares_value)
-    withheld_value.positive? ? [ TaxLine.new(amount: withheld_value) ] : []
+    withheld_value.positive? ? [ TaxLine.new(id: generated_tax_id, amount: withheld_value) ] : []
   end
 
   # Each tax as its entry keeps it, as they round one by one when saved.
@@ -144,6 +149,7 @@ class Trade::VestForm
         qty: received_qty, price: price.to_d, fee: 0, currency: currency,
         units_withheld: units_withheld.presence&.to_d, investment_activity_label: Trade::VEST_LABEL
       )
+      vest.trade.taxes_generated = tax_lines.none?(&:amount)
       vest.vest_write = true
       vest.save!
 
@@ -219,7 +225,11 @@ class Trade::VestForm
 
     # Some shares must reach the account, or there is no lot to record.
     def withheld_within_vested
-      errors.add(:base, I18n.t("vests.form.withheld_exceeds_vested")) unless received_qty.positive?
+      if !received_qty.positive?
+        errors.add(:base, I18n.t("vests.form.withheld_exceeds_vested"))
+      elsif received_qty.round(Trade.columns_hash["qty"].scale).zero?
+        errors.add(:base, I18n.t("vests.form.received_too_small"))
+      end
     end
 
     # Two lines naming one entry would save only the last, while the totals

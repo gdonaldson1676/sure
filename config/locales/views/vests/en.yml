@@ -44,6 +44,7 @@ en:
       tax_line_repeated: Each tax line can be saved only once
       tax_transferred: A tax line you removed is linked as a transfer. Remove that transfer before you remove the line.
       withheld_exceeds_vested: Shares withheld must be fewer than the shares vested
+      received_too_small: Too few shares reach the account to record
     entries:
       income: "%{ticker} vest income"
       taxes_withheld: Taxes withheld
