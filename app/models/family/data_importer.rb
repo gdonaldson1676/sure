@@ -1322,7 +1322,7 @@ class Family::DataImporter
       return if vest_trade_id.blank?
 
       vest = imported[vest_trade_id] || session_imported_entry(sale.account, "Trade", vest_trade_id)
-      return invalid_record!("Trade", "vest_trade_id", vest_trade_id) unless vest&.trade&.vest? && vest.account_id == sale.account_id && vest != sale
+      return invalid_record!("Trade", "vest_trade_id", vest_trade_id) unless vest&.trade&.vest? && vest.account_id == sale.account_id && vest != sale && sale.trade.qty.negative?
 
       sale.update!(vest_entry: vest)
     end

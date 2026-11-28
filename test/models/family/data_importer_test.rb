@@ -1789,6 +1789,11 @@ class Family::DataImporterTest < ActiveSupport::TestCase
       assert Trade::VestForm.for(vest).tax_lines.none?(&:amount), "the tax stays the one the vest form works out"
       assert_equal 2, sale.trade.fee
       assert_equal 2, Trade::VestForm.for(vest).sold_fee, "the vest screen reopens with the sale's fee"
+
+      assert Trade::VestForm.for(vest).save, "saving the restored vest as it is"
+      _, taxes, sale = Trade::VestForm.parts_of(vest.reload)
+      assert_equal [ 398 ], taxes.map(&:amount)
+      assert_equal(-98, sale.amount)
     end
   end
 
@@ -1820,6 +1825,16 @@ class Family::DataImporterTest < ActiveSupport::TestCase
 
     vest = @family.entries.where(entryable_type: "Trade").find { |entry| entry.trade.vest? }
     assert_equal(-10, Trade::VestForm.parts_of(vest).third&.trade&.qty)
+  end
+
+  test "only a sale of shares can be a vest's sale for taxes" do
+    export = vest_export(sold_qty: 10)
+    buy = edit_trades(export) { |data| data.merge!("qty" => "10", "amount" => "100") if data["vest_trade_id"] }
+    session = @family.import_sessions.create!(expected_chunks: 1)
+
+    assert_raises(Family::DataImporter::InvalidRecordError) do
+      Family::DataImporter.new(@family, buy, import_session: session).import!
+    end
   end
 
   test "a vest that names itself as its own sale is refused" do

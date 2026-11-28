@@ -226,14 +226,23 @@ class Trade::VestFormTest < ActiveSupport::TestCase
   end
 
   test "a vest's sale for taxes changes and is deleted only with the vest" do
+    @account.update!(cost_basis_method: "fifo")
     form = vest_form(vested_qty: 100, price: 10, sold_qty: 30)
     form.save
     sale = Trade::VestForm.parts_of(form.entry).third
 
     assert_not sale.update(amount: 1)
     assert_not sale.trade.update(qty: -1)
+    assert_not sale.trade.reload.update(lot_source_entry_id: nil)
     assert_raises(Entry::VestPartDeletionError) { sale.reload.destroy_unless_split_part_transferred! }
     assert Entry.exists?(sale.id)
+  end
+
+  test "with a sale, the default tax still nets the vest's entries to zero as they're stored" do
+    form = vest_form(vested_qty: 7, price: BigDecimal("10.00006"), sold_qty: 3, sold_fee: BigDecimal("0.00003"))
+    assert form.save, form.errors.full_messages.to_sentence
+
+    assert_equal 0, form.entry.amount + form.entry.vest_parts.sum(:amount)
   end
 
   test "a sale's fee can't be more than what the shares sold for" do
