@@ -66,6 +66,14 @@ class Trade::VestFormTest < ActiveSupport::TestCase
     assert_equal 0, form.entry.amount + form.entry.vest_parts.sum(:amount)
   end
 
+  test "cash left is what the stored entries leave, with each entered tax rounded as saved" do
+    form = vest_form(vested_qty: 2, units_withheld: 1, price: 10, tax_lines: [ { name: "Federal", amount: "10.00006" } ])
+    assert form.save, form.errors.full_messages.to_sentence
+
+    assert_equal BigDecimal("-0.0001"), form.cash_left
+    assert_equal(-form.cash_left, form.entry.amount + form.entry.vest_parts.sum(:amount))
+  end
+
   test "taxes that differ from the withheld shares leave the difference as cash" do
     form = vest_form(vested_qty: 100, units_withheld: 30, price: 10, tax_lines: [ { name: "Federal", amount: 280 } ])
 

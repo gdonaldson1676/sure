@@ -116,8 +116,9 @@ class Trade::VestForm
     withheld_value.positive? ? [ TaxLine.new(amount: withheld_value) ] : []
   end
 
+  # Each tax as its entry keeps it, as they round one by one when saved.
   def taxes_total
-    taxes.sum(BigDecimal("0"), &:amount)
+    taxes.sum(BigDecimal("0")) { |tax| stored(tax.amount) }
   end
 
   # Pay left in the account as cash once the shares and taxes are taken out.

@@ -1792,8 +1792,7 @@ class Family::DataImporterTest < ActiveSupport::TestCase
     export = vest_export
     session = @family.import_sessions.create!(expected_chunks: 2)
     Family::DataImporter.new(@family, export, import_session: session).import!
-    income_id = export.split("
-").map { |line| JSON.parse(line) }
+    income_id = export.split("\n").map { |line| JSON.parse(line) }
       .find { |record| record["type"] == "Transaction" && record["data"]["investment_activity_label"] == Trade::VestForm::INCOME_LABEL }["data"]["id"]
 
     Family::DataImporter.new(@family, edit_trades(export) { |data| data["vest_part_transaction_ids"] = [ income_id ] }, import_session: session).import!
