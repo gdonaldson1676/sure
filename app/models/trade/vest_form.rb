@@ -138,16 +138,17 @@ class Trade::VestForm
   end
 
   def sold?
-    sold_qty.to_d.positive?
+    sale_qty.positive?
   end
 
-  # What the shares sold for taxes brought in, after the sale's fee.
+  # What the shares sold for taxes brought in, after the sale's fee, from the
+  # quantity, price, and fee as the sale's trade keeps them.
   def sale_proceeds
-    sold? ? stored(sold_qty.to_d * sale_price - sold_fee.to_d) : 0
+    sold? ? stored(sale_qty * sale_price - sale_fee) : 0
   end
 
   def sale_price
-    sold_price.presence&.to_d || price.to_d
+    in_trade(:price, sold_price.presence&.to_d || price.to_d)
   end
 
   # The tax lines to show: those entered, then blanks to fill in.
@@ -220,9 +221,9 @@ class Trade::VestForm
     def write_sale(vest, sale)
       sale ||= vest.vest_parts.build(entryable: Trade.new(security: vest.trade.security))
       sale.vest_write = true
-      sale.assign_attributes(account: account, date: date, name: Trade.build_name("sell", sold_qty, vest.trade.security.ticker),
+      sale.assign_attributes(account: account, date: date, name: Trade.build_name("sell", sale_qty, vest.trade.security.ticker),
                              amount: -sale_proceeds, currency: currency)
-      sale.trade.assign_attributes(qty: -sold_qty.to_d, price: sale_price, fee: sold_fee.to_d, currency: currency,
+      sale.trade.assign_attributes(qty: -sale_qty, price: sale_price, fee: sale_fee, currency: currency,
                                    investment_activity_label: "Sell", lot_source_entry_id: (vest.id if account.cost_basis_fifo?))
       sale.save!
       sale
@@ -262,8 +263,35 @@ class Trade::VestForm
     end
 
     def sold_within_received
-      errors.add(:base, I18n.t("vests.form.sold_exceeds_received")) if sold_qty.to_d > received_qty
-      errors.add(:base, I18n.t("vests.form.sold_fee_exceeds_proceeds")) if sale_proceeds.negative?
+      elsewhere = sold_from_lot_elsewhere
+      if sale_qty > received_qty
+        errors.add(:base, I18n.t("vests.form.sold_exceeds_received"))
+      elsif sale_qty > received_qty - elsewhere
+        errors.add(:base, I18n.t("vests.form.sold_exceeds_lot", qty: elsewhere.to_s("F")))
+      end
+      errors.add(:base, I18n.t("vests.form.sold_fee_exceeds_proceeds")) if sold? && sale_fee > sale_qty * sale_price
+    end
+
+    # Shares other sales take from this vest's own lot, which its sale for
+    # taxes can't take as well.
+    def sold_from_lot_elsewhere
+      return BigDecimal("0") unless entry
+
+      sale = self.class.parts_of(entry).third
+      Trade.where(lot_source_entry_id: entry.id).where.not(id: sale&.entryable_id).sum("ABS(qty)").to_d
+    end
+
+    def sale_qty
+      in_trade(:qty, sold_qty.to_d)
+    end
+
+    def sale_fee
+      in_trade(:fee, sold_fee.to_d)
+    end
+
+    # A value as the sale's trade column keeps it.
+    def in_trade(column, value)
+      value.round(Trade.columns_hash[column.to_s].scale)
     end
 
     # Some shares must reach the account, or there is no lot to record.

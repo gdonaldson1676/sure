@@ -1835,6 +1835,15 @@ class Family::DataImporterTest < ActiveSupport::TestCase
     end
   end
 
+  test "a vest's sale for taxes can't sell more shares than the vest received" do
+    export = edit_trades(vest_export(sold_qty: 10)) { |data| data["qty"] = "-71" if data["vest_trade_id"] }
+    session = @family.import_sessions.create!(expected_chunks: 1)
+
+    assert_raises(Family::DataImporter::InvalidRecordError) do
+      Family::DataImporter.new(@family, export, import_session: session).import!
+    end
+  end
+
   test "a vest's sale for taxes is of the vest's own shares" do
     export = edit_trades(vest_export(sold_qty: 10)) do |data|
       data.merge!("ticker" => "OTHER#{SecureRandom.hex(3).upcase}", "security_id" => SecureRandom.uuid) if data["vest_trade_id"]

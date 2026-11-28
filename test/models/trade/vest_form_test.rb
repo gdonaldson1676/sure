@@ -245,6 +245,37 @@ class Trade::VestFormTest < ActiveSupport::TestCase
     assert_equal 0, form.entry.amount + form.entry.vest_parts.sum(:amount)
   end
 
+  test "a sale's fee is checked against what the shares sold for, before rounding" do
+    form = vest_form(vested_qty: 100, price: BigDecimal("10.00006"), sold_qty: 1, sold_fee: BigDecimal("10.00007"))
+
+    assert_not form.save
+    assert_includes form.errors[:base], I18n.t("vests.form.sold_fee_exceeds_proceeds")
+  end
+
+  test "a sale's proceeds come from its values as stored, so saving again changes nothing" do
+    form = vest_form(vested_qty: 100, price: BigDecimal("10.00006"), sold_qty: 1, sold_fee: BigDecimal("0.00004"))
+    assert form.save, form.errors.full_messages.to_sentence
+    amounts = -> { [ form.entry.reload.amount, *Trade::VestForm.parts_of(form.entry).flatten.compact.map(&:amount) ] }
+    before = amounts.call
+
+    assert Trade::VestForm.for(form.entry.reload).save
+    assert_equal before, amounts.call
+  end
+
+  test "the sale for taxes can't take shares another sale already took from the vest's lot" do
+    @account.update!(cost_basis_method: "fifo")
+    form = vest_form(vested_qty: 100, price: 10)
+    form.save
+    @account.entries.create!(name: "Sell", date: Date.current, amount: -800, currency: "USD",
+                             entryable: Trade.new(security: form.entry.trade.security, qty: -80, price: 10, currency: "USD",
+                                                  investment_activity_label: "Sell", lot_source_entry_id: form.entry.id))
+
+    reopened = Trade::VestForm.for(form.entry.reload)
+    reopened.assign_attributes(sold_qty: 30)
+    assert_not reopened.save
+    assert_includes reopened.errors[:base], I18n.t("vests.form.sold_exceeds_lot", qty: "80.0")
+  end
+
   test "a sale's fee can't be more than what the shares sold for" do
     form = vest_form(vested_qty: 100, price: 10, sold_qty: 1, sold_fee: 20)
 

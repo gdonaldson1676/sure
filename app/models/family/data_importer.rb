@@ -1327,11 +1327,11 @@ class Family::DataImporter
       sale.update!(vest_entry: vest)
     end
 
-    # A vest has at most one sale for taxes: a sale of its own shares, in its
-    # account. Replaying the same sale still matches.
+    # A vest has at most one sale for taxes: a sale of its own shares, no more
+    # than it received, in its account. Replaying the same sale still matches.
     def vest_sale_for?(vest, sale)
       vest&.trade&.vest? && vest != sale && vest.account_id == sale.account_id &&
-        sale.trade.qty.negative? && sale.trade.security_id == vest.trade.security_id &&
+        sale.trade.qty.negative? && sale.trade.qty.abs <= vest.trade.qty && sale.trade.security_id == vest.trade.security_id &&
         vest.vest_parts.where(entryable_type: "Trade").where.not(id: sale.id).none?
     end
 

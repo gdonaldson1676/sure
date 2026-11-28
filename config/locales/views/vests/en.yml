@@ -47,6 +47,7 @@ en:
       received_too_small: Too few shares reach the account to record
       sold_exceeds_received: Shares sold for taxes cannot be more than the shares received
       sold_fee_exceeds_proceeds: The sale's fee cannot be more than what the shares sold for
+      sold_exceeds_lot: Other sales already take %{qty} of this vest's shares, so fewer are left to sell for taxes
       sold: Shares sold for taxes
       sold_qty: Shares sold
       sold_price: Sale price per share
