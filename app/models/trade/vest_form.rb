@@ -112,7 +112,7 @@ class Trade::VestForm
     entered = tax_lines.select(&:amount)
     return entered if entered.any?
 
-    withheld_value = units_withheld.to_d * price.to_d
+    withheld_value = stored(gross_pay) - stored(shares_value)
     withheld_value.positive? ? [ TaxLine.new(amount: withheld_value) ] : []
   end
 
@@ -122,7 +122,7 @@ class Trade::VestForm
 
   # Pay left in the account as cash once the shares and taxes are taken out.
   def cash_left
-    gross_pay - taxes_total - shares_value
+    stored(gross_pay) - taxes_total - stored(shares_value)
   end
 
   # The tax lines to show: those entered, then blanks to fill in.
@@ -177,6 +177,12 @@ class Trade::VestForm
   end
 
   private
+    # An amount as the entries keep it, so the vest's entries, each rounded
+    # when saved, still net to zero.
+    def stored(amount)
+      amount.round(Entry.columns_hash["amount"].scale)
+    end
+
     # Updates an income or tax entry in place, or adds it when there is none.
     def write_part(vest, part, name:, category_id:, amount:, label:)
       part ||= vest.vest_parts.build(entryable: Transaction.new)

@@ -59,6 +59,13 @@ class Trade::VestFormTest < ActiveSupport::TestCase
     assert_equal [ -250 ], form.entry.vest_parts.map(&:amount)
   end
 
+  test "the default tax nets the vest's entries to zero as they're stored" do
+    form = vest_form(vested_qty: 2, units_withheld: 1, price: BigDecimal("10.00006"))
+    assert form.save, form.errors.full_messages.to_sentence
+
+    assert_equal 0, form.entry.amount + form.entry.vest_parts.sum(:amount)
+  end
+
   test "taxes that differ from the withheld shares leave the difference as cash" do
     form = vest_form(vested_qty: 100, units_withheld: 30, price: 10, tax_lines: [ { name: "Federal", amount: 280 } ])
 
