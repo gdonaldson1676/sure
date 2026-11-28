@@ -1768,7 +1768,7 @@ class Family::DataImporterTest < ActiveSupport::TestCase
   end
 
   test "a vest round trip keeps its income and taxes linked, its withheld shares, and every label" do
-    ndjson = vest_export(sold_qty: 10)
+    ndjson = vest_export(sold_qty: 10, sold_fee: 2)
 
     [ ndjson, ndjson.split("\n") ].each do |file|
       family = Family.create!(name: "Vest Target", currency: "USD", locale: "en", date_format: "%Y-%m-%d")
@@ -1784,9 +1784,11 @@ class Family::DataImporterTest < ActiveSupport::TestCase
       assert_equal 30, vest.trade.units_withheld
       income, taxes, sale = Trade::VestForm.parts_of(vest)
       assert_equal(-1000, income.amount)
-      assert_equal [ 400 ], taxes.map(&:amount)
+      assert_equal [ 398 ], taxes.map(&:amount)
       assert_equal(-10, sale.trade.qty)
       assert Trade::VestForm.for(vest).tax_lines.none?(&:amount), "the tax stays the one the vest form works out"
+      assert_equal 2, sale.trade.fee
+      assert_equal 2, Trade::VestForm.for(vest).sold_fee, "the vest screen reopens with the sale's fee"
     end
   end
 
@@ -1818,6 +1820,15 @@ class Family::DataImporterTest < ActiveSupport::TestCase
 
     vest = @family.entries.where(entryable_type: "Trade").find { |entry| entry.trade.vest? }
     assert_equal(-10, Trade::VestForm.parts_of(vest).third&.trade&.qty)
+  end
+
+  test "a vest that names itself as its own sale is refused" do
+    export = edit_trades(vest_export) { |data| data["vest_trade_id"] = data["id"] }
+    session = @family.import_sessions.create!(expected_chunks: 1)
+
+    assert_raises(Family::DataImporter::InvalidRecordError) do
+      Family::DataImporter.new(@family, export, import_session: session).import!
+    end
   end
 
   test "a replayed vest doesn't link a transaction that has become a transfer leg" do

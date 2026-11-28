@@ -46,6 +46,7 @@ en:
       withheld_exceeds_vested: Shares withheld must be fewer than the shares vested
       received_too_small: Too few shares reach the account to record
       sold_exceeds_received: Shares sold for taxes cannot be more than the shares received
+      sold_fee_exceeds_proceeds: The sale's fee cannot be more than what the shares sold for
       sold: Shares sold for taxes
       sold_qty: Shares sold
       sold_price: Sale price per share

@@ -10776,8 +10776,9 @@ paths:
               schema:
                 "$ref": "#/components/schemas/ErrorResponse"
         '422':
-          description: a vest whose income or a tax is a leg of a transfer; remove
-            the transfer first
+          description: a vest whose income or a tax is a leg of a transfer (remove
+            the transfer first), or a vest's sale for taxes (clear it on the vest's
+            screen)
           content:
             application/json:
               schema:

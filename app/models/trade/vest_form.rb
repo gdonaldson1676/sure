@@ -263,6 +263,7 @@ class Trade::VestForm
 
     def sold_within_received
       errors.add(:base, I18n.t("vests.form.sold_exceeds_received")) if sold_qty.to_d > received_qty
+      errors.add(:base, I18n.t("vests.form.sold_fee_exceeds_proceeds")) if sale_proceeds.negative?
     end
 
     # Some shares must reach the account, or there is no lot to record.

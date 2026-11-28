@@ -1259,6 +1259,7 @@ class Family::DataImporter
           security: security,
           qty: data["qty"].to_d,
           price: data["price"].to_d,
+          fee: data["fee"].to_d,
           currency: data["currency"] || account.currency
         )
         # As for a transaction, the label is restored on a new trade only.
@@ -1321,7 +1322,7 @@ class Family::DataImporter
       return if vest_trade_id.blank?
 
       vest = imported[vest_trade_id] || session_imported_entry(sale.account, "Trade", vest_trade_id)
-      return invalid_record!("Trade", "vest_trade_id", vest_trade_id) unless vest&.trade&.vest? && vest.account_id == sale.account_id
+      return invalid_record!("Trade", "vest_trade_id", vest_trade_id) unless vest&.trade&.vest? && vest.account_id == sale.account_id && vest != sale
 
       sale.update!(vest_entry: vest)
     end

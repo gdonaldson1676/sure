@@ -236,6 +236,13 @@ class Trade::VestFormTest < ActiveSupport::TestCase
     assert Entry.exists?(sale.id)
   end
 
+  test "a sale's fee can't be more than what the shares sold for" do
+    form = vest_form(vested_qty: 100, price: 10, sold_qty: 1, sold_fee: 20)
+
+    assert_not form.save
+    assert_includes form.errors[:base], I18n.t("vests.form.sold_fee_exceeds_proceeds")
+  end
+
   test "a vest cannot sell more shares for taxes than it received" do
     form = vest_form(vested_qty: 100, units_withheld: 30, price: 10, sold_qty: 71)
 

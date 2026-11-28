@@ -754,7 +754,7 @@ RSpec.describe 'API V1 Trades', type: :request do
         run_test!
       end
 
-      response '422', "a vest whose income or a tax is a leg of a transfer; remove the transfer first" do
+      response '422', "a vest whose income or a tax is a leg of a transfer (remove the transfer first), or a vest's sale for taxes (clear it on the vest's screen)" do
         schema '$ref' => '#/components/schemas/ErrorResponse'
 
         let(:id) do
