@@ -30,7 +30,7 @@ class Trade::VestForm
   end
 
   attr_accessor :account, :date, :ticker, :manual_ticker, :vested_qty, :units_withheld, :price,
-                :income_category_id
+                :income_category_id, :sold_qty, :sold_price, :sold_fee
   # The entry of a tax the form generated rather than one typed in, so a
   # reopened vest works it out again from its shares.
   attr_accessor :generated_tax_id
@@ -45,11 +45,14 @@ class Trade::VestForm
   validate :tax_lines_have_amounts
   validate :tax_lines_name_each_entry_once
   validate :withheld_within_vested
+  validates :sold_qty, :sold_fee, numericality: { greater_than_or_equal_to: 0 }, allow_blank: true
+  validates :sold_price, numericality: { greater_than: 0 }, allow_blank: true
+  validate :sold_within_received
 
   # The form for a vest already recorded, filled in from its entries.
   def self.for(entry)
     trade = entry.trade
-    income, taxes = parts_of(entry)
+    income, taxes, sale = parts_of(entry)
     generated = trade.taxes_generated? && taxes.one?
 
     new(
@@ -61,16 +64,19 @@ class Trade::VestForm
       price: trade.price,
       income_category_id: income&.entryable&.category_id,
       tax_lines: generated ? [] : taxes.map { |tax| { id: tax.id, name: tax.name, category_id: tax.entryable.category_id, amount: tax.amount } },
-      generated_tax_id: (taxes.first.id if generated)
+      generated_tax_id: (taxes.first.id if generated),
+      sold_qty: sale&.trade&.qty&.abs,
+      sold_price: sale&.trade&.price,
+      sold_fee: sale&.trade&.fee
     )
   end
 
-  # The vest's income entry and its tax entries, oldest first, told apart by
-  # their labels.
+  # The vest's income entry, its tax entries (oldest first, told apart by
+  # their labels), and its sale of shares for taxes, if any.
   def self.parts_of(entry)
-    parts = entry.vest_parts.includes(:entryable).order(:created_at).select(&:transaction?)
-    labelled = ->(label) { parts.select { |part| part.entryable.investment_activity_label == label } }
-    [ labelled.(INCOME_LABEL).first, labelled.(TAX_LABEL) ]
+    parts = entry.vest_parts.includes(:entryable).order(:created_at).to_a
+    labelled = ->(label) { parts.select { |part| part.transaction? && part.entryable.investment_activity_label == label } }
+    [ labelled.(INCOME_LABEL).first, labelled.(TAX_LABEL), parts.find(&:trade?) ]
   end
 
   def initialize(entry: nil, tax_lines: [], **attrs)
@@ -117,8 +123,8 @@ class Trade::VestForm
     entered = tax_lines.select(&:amount)
     return entered if entered.any?
 
-    withheld_value = stored(gross_pay) - stored(shares_value)
-    withheld_value.positive? ? [ TaxLine.new(id: generated_tax_id, amount: withheld_value) ] : []
+    default = stored(gross_pay) - stored(shares_value) + sale_proceeds
+    default.positive? ? [ TaxLine.new(id: generated_tax_id, amount: default) ] : []
   end
 
   # Each tax as its entry keeps it, as they round one by one when saved.
@@ -128,7 +134,20 @@ class Trade::VestForm
 
   # Pay left in the account as cash once the shares and taxes are taken out.
   def cash_left
-    stored(gross_pay) - taxes_total - stored(shares_value)
+    stored(gross_pay) - taxes_total - stored(shares_value) + sale_proceeds
+  end
+
+  def sold?
+    sold_qty.to_d.positive?
+  end
+
+  # What the shares sold for taxes brought in, after the sale's fee.
+  def sale_proceeds
+    sold? ? stored(sold_qty.to_d * sale_price - sold_fee.to_d) : 0
+  end
+
+  def sale_price
+    sold_price.presence&.to_d || price.to_d
   end
 
   # The tax lines to show: those entered, then blanks to fill in.
@@ -153,7 +172,7 @@ class Trade::VestForm
       vest.vest_write = true
       vest.save!
 
-      income, old_taxes = entry ? self.class.parts_of(vest) : [ nil, [] ]
+      income, old_taxes, sale = entry ? self.class.parts_of(vest) : [ nil, [], nil ]
       parts = [ write_part(vest, income, name: I18n.t("vests.entries.income", ticker: vest.trade.security.ticker),
                            category_id: income_category_id, amount: -gross_pay, label: INCOME_LABEL) ]
       parts += taxes.map do |tax|
@@ -163,6 +182,12 @@ class Trade::VestForm
       (old_taxes - parts).each do |removed|
         removed.vest_write = true
         removed.destroy_unless_split_part_transferred!
+      end
+      if sold?
+        parts << write_sale(vest, sale)
+      elsif sale
+        sale.vest_write = true
+        sale.destroy_unless_split_part_transferred!
       end
 
       [ vest, *parts ].each do |saved|
@@ -188,6 +213,19 @@ class Trade::VestForm
     # when saved, still net to zero.
     def stored(amount)
       amount.round(Entry.columns_hash["amount"].scale)
+    end
+
+    # The sale of shares for taxes, from the vest's own lot where the account
+    # sells by fifo (under average every lot is relieved pro rata).
+    def write_sale(vest, sale)
+      sale ||= vest.vest_parts.build(entryable: Trade.new(security: vest.trade.security))
+      sale.vest_write = true
+      sale.assign_attributes(account: account, date: date, name: Trade.build_name("sell", sold_qty, vest.trade.security.ticker),
+                             amount: -sale_proceeds, currency: currency)
+      sale.trade.assign_attributes(qty: -sold_qty.to_d, price: sale_price, fee: sold_fee.to_d, currency: currency,
+                                   investment_activity_label: "Sell", lot_source_entry_id: (vest.id if account.cost_basis_fifo?))
+      sale.save!
+      sale
     end
 
     # Updates an income or tax entry in place, or adds it when there is none.
@@ -221,6 +259,10 @@ class Trade::VestForm
 
     def security_present
       errors.add(:base, I18n.t("vests.form.security_required")) unless security
+    end
+
+    def sold_within_received
+      errors.add(:base, I18n.t("vests.form.sold_exceeds_received")) if sold_qty.to_d > received_qty
     end
 
     # Some shares must reach the account, or there is no lot to record.
